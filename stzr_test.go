@@ -44,9 +44,7 @@ func ExampleSanitizer_SanitizeStruct() {
 
 func ExampleSanitizer_SanitizeString() {
 	s := stzr.Default()
-
 	input := `<script>alert('schwifty')</script>Get <b>schwifty</b> in here!`
-
 	strict, _ := s.SanitizeString("strict", input)
 	ugc, _ := s.SanitizeString("ugc", input)
 
@@ -58,6 +56,34 @@ func ExampleSanitizer_SanitizeString() {
 	// Input: <script>alert('schwifty')</script>Get <b>schwifty</b> in here!
 	// Strict: Get schwifty in here!
 	// UGC: Get <b>schwifty</b> in here!
+}
+
+func ExampleWithPolicy() {
+	s := stzr.New(
+		stzr.WithPolicy("strict", bluemonday.StrictPolicy()),
+		stzr.WithPolicy("ugc", bluemonday.UGCPolicy()),
+		stzr.WithPolicy("italics", bluemonday.NewPolicy().AllowElements("i")),
+		stzr.WithPolicy("noop", stzr.PolicyFunc(func(s string) string { return s })),
+	)
+
+	input := `<script>alert('schwifty')</script>Get <b>schwifty</b> in here!`
+	strict, _ := s.SanitizeString("strict", input)
+	ugc, _ := s.SanitizeString("ugc", input)
+	italics, _ := s.SanitizeString("italics", input)
+	noop, _ := s.SanitizeString("noop", input)
+
+	fmt.Printf("Input: %s\n", input)
+	fmt.Printf("Strict: %s\n", strict)
+	fmt.Printf("UGC: %s\n", ugc)
+	fmt.Printf("Italics: %s\n", italics)
+	fmt.Printf("Noop: %s\n", noop)
+
+	// Output:
+	// Input: <script>alert('schwifty')</script>Get <b>schwifty</b> in here!
+	// Strict: Get schwifty in here!
+	// UGC: Get <b>schwifty</b> in here!
+	// Italics: Get schwifty in here!
+	// Noop: <script>alert('schwifty')</script>Get <b>schwifty</b> in here!
 }
 
 func TestSanitizer_SanitizeString(t *testing.T) {
@@ -715,6 +741,23 @@ func TestSanitizer_SanitizeStruct(t *testing.T) {
 				assert.Equal(t, "<script>alert('xss')</script>Untagged Content", input.CompletelyUntagged.Content)
 			},
 		},
+		{
+			name: "generics",
+			run: func(t *testing.T, s *stzr.Sanitizer) {
+				type optional[T any] struct {
+					Value T `sanitize:"strict"`
+					Set   bool
+				}
+
+				input := optional[string]{
+					Value: "<script>alert('xss')</script>Tagged",
+					Set:   true,
+				}
+
+				require.NoError(t, s.SanitizeStruct(&input))
+				assert.Equal(t, "Tagged", input.Value)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -730,6 +773,91 @@ func TestSanitizer_SanitizeStruct(t *testing.T) {
 				tt.setup(s)
 			}
 			tt.run(t, s)
+		})
+	}
+}
+
+// Note: All tests on global instance should be run here and cleanup properly.
+func TestGlobal(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(*testing.T)
+		run     func(*testing.T)
+		wantErr bool
+	}{
+		{
+			name:  "default with strict policy",
+			setup: func(t *testing.T) {},
+			run: func(t *testing.T) {
+				s := stzr.Default()
+				result, err := s.SanitizeString("strict", "<script>alert('xss')</script>Hello <b>World</b>")
+				require.NoError(t, err)
+				assert.Equal(t, "Hello World", result)
+			},
+		},
+		{
+			name:  "default with ugc policy",
+			setup: func(t *testing.T) {},
+			run: func(t *testing.T) {
+				s := stzr.Default()
+				result, err := s.SanitizeString("ugc", "<script>alert('xss')</script>Hello <b>World</b>")
+				require.NoError(t, err)
+				assert.Equal(t, "Hello <b>World</b>", result)
+			},
+		},
+		{
+			name: "default with custom policy",
+			setup: func(t *testing.T) {
+				customSanitizer := stzr.New(
+					stzr.WithPolicy("custom", stzr.PolicyFunc(func(s string) string {
+						return "CUSTOM: " + s
+					})),
+				)
+				stzr.SetDefault(customSanitizer)
+			},
+			run: func(t *testing.T) {
+				s := stzr.Default()
+				result, err := s.SanitizeString("custom", "test")
+				require.NoError(t, err)
+				assert.Equal(t, "CUSTOM: test", result)
+			},
+		},
+		{
+			name:  "global sanitize string call",
+			setup: func(t *testing.T) {},
+			run: func(t *testing.T) {
+				result, err := stzr.SanitizeString("strict", "<script>alert('xss')</script>Hello <b>World</b>")
+				require.NoError(t, err)
+				assert.Equal(t, "Hello World", result)
+			},
+		},
+		{
+			name:  "global sanitize struct call",
+			setup: func(t *testing.T) {},
+			run: func(t *testing.T) {
+				input := struct {
+					Field string `sanitize:"strict"`
+				}{
+					Field: "<script>alert('xss')</script>Hello <b>World</b>",
+				}
+				err := stzr.SanitizeStruct(&input)
+				require.NoError(t, err)
+				assert.Equal(t, "Hello World", input.Field)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := stzr.Default()
+			t.Cleanup(func() {
+				stzr.SetDefault(original)
+			})
+
+			if tt.setup != nil {
+				tt.setup(t)
+			}
+			tt.run(t)
 		})
 	}
 }

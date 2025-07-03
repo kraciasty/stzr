@@ -17,9 +17,9 @@ _Becoming fed up with **manually sanitizing every string field** in complex nest
 A sane input sanitization experience:
 
 - **Tag-based** - just add the tag
-- **Recursive** - handles nested structs, slices, maps, pointers
+- **Recursive** - handles nested structs, slices, maps, pointers, generics
 - Built-in **policies**: `strict` and `ugc` powered by [bluemonday policies](https://pkg.go.dev/github.com/microcosm-cc/bluemonday#Policy)
-- **Extensible** with custom policy functions
+- **Extensible** with policies or custom functions
 
 ## Quickstart
 

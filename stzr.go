@@ -3,10 +3,10 @@
 //
 // This package wraps bluemonday policies to enable automatic HTML sanitization
 // of struct fields based on struct tags. It supports recursive sanitization
-// of nested structs, slices, maps, and pointers.
+// of nested structs, slices, maps, generics and pointers.
 //
-// The package comes with default "strict" and "ugc" policies from bluemonday,
-// but supports custom policies through the WithPolicy option.
+// The default sanitizer instance comes with "strict" and "ugc" bluemonday
+// policies and can be configured further.
 package stzr
 
 import (
@@ -35,7 +35,7 @@ func init() {
 
 // Default returns the default Sanitizer. By default, it includes "ugc" and
 // "strict" policies that match the bluemonday UGC and Strict policies, but
-// the global instance may be modified.
+// the global instance may be modified by calling SetDefault.
 func Default() *Sanitizer { return defaultSanitizer.Load() }
 
 // SetDefault sets the default Sanitizer used by the package-level functions.
@@ -48,7 +48,7 @@ func SanitizeString(policy string, input string) (string, error) {
 	return Default().SanitizeString(policy, input)
 }
 
-// SanitizeStruct applies sanitization using the default sanitizer.
+// SanitizeStruct applies sanitization using the default sanitizer instance.
 func SanitizeStruct(v any) error {
 	return Default().SanitizeStruct(v)
 }
